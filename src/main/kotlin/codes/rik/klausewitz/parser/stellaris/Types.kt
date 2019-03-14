@@ -24,6 +24,7 @@ data class Species(
 
 data class Planet(
     val name: String,
+    val controller: Long,
     val planetClass: String,
     val planetSize: Long,
     val colonizeDate: LocalDate? = null,
@@ -61,7 +62,6 @@ data class Country(
     val empireCohesion: Double? = null,
     val graphicalCulture: String? = null,
     val ai: AiBehaviour? = null
-
 ) {
     data class Flag(
         val colors: List<String>,
@@ -159,5 +159,3 @@ data class Country(
         )
     }
 }
-
-

@@ -3,12 +3,15 @@ package codes.rik.klausewitz.parser.stellaris
 import codes.rik.klausewitz.antlr.ParadoxBaseVisitor
 import codes.rik.klausewitz.antlr.ParadoxLexer
 import codes.rik.klausewitz.antlr.ParadoxParser
-import codes.rik.kotlinbits.collections.toMultimap
+import codes.rik.kotlinpieces.collections.toMultimap
 import com.google.common.collect.Multimap
 import org.antlr.v4.runtime.CharStream
 import org.antlr.v4.runtime.CommonTokenStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+
+// Visitors which parse to untyped Multimaps
+// WIP: misses a bunch of cases, use TypedVisitors if possible.
 
 fun parseConfig(input: CharStream) = ParadoxParser(CommonTokenStream(ParadoxLexer(input))).config().toConfigBlock()
 fun ParadoxParser.ConfigContext.toConfigBlock() = ConfigVisitor.visit(this)

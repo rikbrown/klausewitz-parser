@@ -4,8 +4,8 @@ import codes.rik.klausewitz.antlr.ParadoxBaseVisitor
 import codes.rik.klausewitz.antlr.ParadoxParser
 import codes.rik.klausewitz.antlr.ParadoxParser.AssignmentContext
 import codes.rik.klausewitz.antlr.ParadoxVisitor
-import codes.rik.kotlinbits.strings.pluralise
-import codes.rik.kotlinbits.strings.toCamelCase
+import codes.rik.kotlinpieces.strings.pluralise
+import codes.rik.kotlinpieces.strings.toCamelCase
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.reflect.KClass
@@ -13,19 +13,23 @@ import kotlin.reflect.KParameter
 import kotlin.reflect.KType
 import kotlin.reflect.full.primaryConstructor
 
+/**
+ * Resolves the appropriate [ParadoxVisitor] to parse an object of [type].
+ */
 private fun resolveVisitor(name: String?, type: KType): ParadoxVisitor<*> {
+    // Map<String, Integer> => Map
     val classifierClass = type.classifier as KClass<*>
 
     return when (classifierClass) {
         // literals
         String::class -> StringVisitor
-        Long::class -> IntegerVisitor
+        Long::class -> IntegerVisitor // TODO: support Int with overflow if too big?
         Double::class -> RealVisitor
         Boolean::class -> BooleanVisitor
         LocalDate::class -> DateVisitor
 
         // collections
-        List::class -> ArrayVisitor(name, type.typeArgument(0))
+        List::class -> ListVisitor(name, type.typeArgument(0))
         Map::class -> MapVisitor(
                 name,
                 type.typeArgument(0),
@@ -34,7 +38,10 @@ private fun resolveVisitor(name: String?, type: KType): ParadoxVisitor<*> {
 
         else ->
             when {
+                // Data class (visit object and fill its arguments)
                 classifierClass.isData -> ObjectVisitor(classifierClass)
+
+                // Exhausted options
                 else -> throw IllegalArgumentException("Unexpected type for $name ($type): $classifierClass")
             }
     }
@@ -91,6 +98,7 @@ class ObjectVisitor<T: Any>(private val clazz: KClass<T>) : ParadoxBaseVisitor<T
         return this.filter { assignment ->
             val field = assignment.field().text.stripped
 
+            // FIXME: does this evaluate them all first, or in order?
             when (parameterName) {
                 field -> true
                 field.pluralise() -> true
@@ -102,21 +110,21 @@ class ObjectVisitor<T: Any>(private val clazz: KClass<T>) : ParadoxBaseVisitor<T
     }
 }
 
-private class ArrayVisitor(private val name: String?, type: KType): ParadoxBaseVisitor<Any>() {
-    private val visitor = resolveVisitor(name, type)
+private class ListVisitor(private val name: String?, private val type: KType): ParadoxBaseVisitor<List<Any>>() {
+    private val visitor = resolveVisitor(name, type) // Find visitor for array generic type
 
     override fun visitArray(ctx: ParadoxParser.ArrayContext): List<Any> = ctx.value().map { it.accept(visitor) }
 
     override fun visitMap(ctx: ParadoxParser.MapContext): List<Any> {
         val distinctKeys = ctx.assignment().map { it.field().text }.distinct()
-        if (distinctKeys.size > 1) throw(IllegalArgumentException("$name multimap has multiple keys: $distinctKeys"))
+        if (distinctKeys.size > 1) throw IllegalArgumentException("$name multimap has multiple keys: $distinctKeys")
         return ctx.assignment().map { it.value() }.map { it.accept(visitor) }
     }
 }
 
 private class MapVisitor(name: String?, keyType: KType, valueType: KType): ParadoxBaseVisitor<Any>() {
-    private val keyVisitor = resolveVisitor(name, keyType)
-    private val valueVisitor = resolveVisitor(name, valueType)
+    private val keyVisitor = resolveVisitor(name, keyType) // Visitor for key generic type
+    private val valueVisitor = resolveVisitor(name, valueType) // Visitor for value generic type
 
     override fun visitMap(ctx: ParadoxParser.MapContext): Map<Any, Any> {
         return ctx.assignment()
@@ -151,15 +159,13 @@ private object BooleanVisitor : ParadoxBaseVisitor<Boolean>() {
 }
 
 private object DateVisitor : ParadoxBaseVisitor<LocalDate>() {
-    override fun visitDate(ctx: ParadoxParser.DateContext): LocalDate = LocalDate.parse(ctx.text,
-        dateFormatter
-    )
+    override fun visitDate(ctx: ParadoxParser.DateContext): LocalDate = LocalDate.parse(ctx.text, dateFormatter)
     override fun visitString(ctx: ParadoxParser.StringContext): LocalDate = LocalDate.parse(ctx.text.stripped,
-        stellarisDateFormatter
+        stellarisDateFormatter // FIXME: Stellaris-specific dependency
     )
 }
 
 private fun KParameter.typeArgument(idx: Int) = type.typeArgument(idx)
-private fun KType.typeArgument(idx: Int) = this.arguments[idx].type ?: throw java.lang.IllegalStateException("No type argument $idx on $this")
+private fun KType.typeArgument(idx: Int) = this.arguments[idx].type ?: throw IllegalStateException("No type argument $idx on $this")
 
 private val stellarisDateFormatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
